@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [24, 26]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - run: npm run lint
+      - run: npm test
+
+  elasticsearch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 26
+          cache: npm
+      - run: npm ci
+      # .env.example's placeholder password is fine for a throwaway CI node.
+      - run: cp .env.example .env
+      - run: docker compose up -d --wait
+      - name: npm test (fails if the Elasticsearch suite was skipped)
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test.log
+          ! grep -q 'set ELASTICSEARCH_TEST_INDEX_PREFIX' test.log
+      - if: always()
+        run: docker compose down -v
