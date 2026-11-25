@@ -1,47 +1,15 @@
-import express from 'express'
-import cors from 'cors'
-import bodyParser from 'body-parser'
-import { Client } from '@elastic/elasticsearch'
-import './config/env.config'
+import { Client } from '@elastic/elasticsearch';
+import { createApp } from './app.js';
+import { loadConfig } from './config/env.config.js';
 
-const app = express()
-app.use(cors())
-app.use(bodyParser.json())
-app.use(
-    bodyParser.urlencoded({
-      extended: true
-    })
-)
+const config = loadConfig();
+const client = new Client(config.elasticsearch);
+const app = createApp(client, { index: config.heroesIndex, corsOrigin: config.corsOrigin });
 
-const client = new Client({ node: global.env.els_host })
-app.get('/heroes', async (req, res) => {
-  client.search({
-    index: 'heroes',
-    body: {
-      query: {
-        match_all: {}
-      }
-    }
-  }).then(({ body }) => {
-    res.send(body.hits.hits)
-  }).catch(err => {
-    res.send(err)
-  })
-})
-app.post('/heroes', async (req, res) => {
-  client.index({
-    index: 'heroes',
-    body: {
-      character: req.body.character_name
-    }
-  }).then(data => {
-    res.send(data)
-  }).catch(err => {
-    res.send(err)
-  })
-})
+const server = app.listen(config.port, config.host, () => {
+  console.log('\x1b[36m%s\x1b[0m', `(${config.NODE_ENV}) Server is running on http://${config.host}:${config.port}`);
+});
 
-const port = global.env.port || 3000
-app.listen(port, () => {
-  console.log('\x1b[36m', `(${global.env.NODE_ENV}) Server is running on port ${port}.\n`)
-})
+for (const signal of ['SIGINT', 'SIGTERM']) {
+  process.on(signal, () => server.close(() => client.close()));
+}
